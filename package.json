@@ -1,0 +1,19 @@
+{
+  "name": "telegram-gift-monitor",
+  "version": "6.0.0",
+  "description": "Telegram Gift Monitor using changes.tg API",
+  "type": "module",
+  "main": "telegram-gift-monitor-changes-api.js",
+  "scripts": {
+    "start": "node telegram-gift-monitor-changes-api.js"
+  },
+  "dependencies": {
+    "telegram": "^2.24.2",
+    "input": "^1.0.1",
+    "node-telegram-bot-api": "^0.66.0",
+    "node-fetch": "^3.3.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
