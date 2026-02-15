@@ -3,9 +3,9 @@
   "version": "7.0.0",
   "description": "Telegram Gift Monitor with PostgreSQL support",
   "type": "module",
-  "main": "telegram-gift-monitor-v3.js",
+  "main": "telegram-gift-monitor-v3-postgres.js",
   "scripts": {
-    "start": "node telegram-gift-monitor-v3.js"
+    "start": "telegram-gift-monitor-v3-postgres.js"
   },
   "dependencies": {
     "node-telegram-bot-api": "^0.66.0",
