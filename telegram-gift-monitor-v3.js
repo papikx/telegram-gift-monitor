@@ -1,19 +1,28 @@
 /**
- * Telegram Gift Monitor v6.4 - Railway Edition
- * Использует память вместо файлов (для Railway/облачных платформ)
+ * Telegram Gift Monitor v6.3 - FINAL VERSION
+ * Формат уведомлений как на скриншотах пользователя
  */
 
 import TelegramBot from 'node-telegram-bot-api';
 import fetch from 'node-fetch';
+import fs from 'fs/promises';
+import path from 'path';
 
 // ====== НАСТРОЙКИ ======
 const CONFIG = {
-    botToken: process.env.BOT_TOKEN || '8591649030:AAFVVtyIlWTeIdGuoAcxWi-KXIz5gSl2OnM',
-    notificationChatId: process.env.CHAT_ID || '-1003863003390',
-    checkInterval: parseInt(process.env.CHECK_INTERVAL || '5000'),
+    botToken: '8591649030:AAFVVtyIlWTeIdGuoAcxWi-KXIz5gSl2OnM',
+    notificationChatId: '-1003863003390',
+    checkInterval: 5000,
     apiUrl: 'https://api.changes.tg/gifts',
-    // Начальное состояние из переменной окружения (если есть)
-    initialState: process.env.GIFTS_STATE ? JSON.parse(process.env.GIFTS_STATE) : null
+    stateFile: 'gifts-state.json',
+    useTelegramClient: false
+};
+
+const TELEGRAM_CLIENT_CONFIG = {
+    apiId: 0,
+    apiHash: '',
+    phoneNumber: '',
+    sessionFile: 'session.txt'
 };
 // =======================
 
@@ -21,38 +30,74 @@ class GiftMonitor {
     constructor(config) {
         this.config = config;
         this.bot = null;
+        this.client = null;
         this.knownGifts = new Map();
         this.isRunning = false;
         this.isFirstCheck = true;
+        this.stateFilePath = path.resolve(process.cwd(), this.config.stateFile);
     }
 
     async initialize() {
-        this.bot = new TelegramBot(this.config.botToken, { polling: false });
-        const me = await this.bot.getMe();
-        console.log(`✅ Бот подключен: @${me.username}`);
+        if (this.config.useTelegramClient) {
+            const { TelegramClient } = await import('telegram');
+            const { StringSession } = await import('telegram/sessions/index.js');
+            const input = (await import('input')).default;
+
+            let session;
+            try {
+                const sessionString = await fs.readFile(TELEGRAM_CLIENT_CONFIG.sessionFile, 'utf-8');
+                session = new StringSession(sessionString.trim());
+            } catch {
+                session = new StringSession('');
+            }
+
+            this.client = new TelegramClient(
+                session,
+                TELEGRAM_CLIENT_CONFIG.apiId,
+                TELEGRAM_CLIENT_CONFIG.apiHash,
+                { connectionRetries: 5 }
+            );
+
+            await this.client.start({
+                phoneNumber: async () => TELEGRAM_CLIENT_CONFIG.phoneNumber || await input.text('Номер: '),
+                password: async () => await input.text('Пароль 2FA: '),
+                phoneCode: async () => await input.text('Код: '),
+                onError: (err) => console.error('❌', err),
+            });
+
+            const sessionString = this.client.session.save();
+            await fs.writeFile(TELEGRAM_CLIENT_CONFIG.sessionFile, sessionString);
+            console.log('✅ TelegramClient авторизован');
+        } else {
+            this.bot = new TelegramBot(this.config.botToken, { polling: false });
+            const me = await this.bot.getMe();
+            console.log(`✅ Бот подключен: @${me.username}`);
+        }
     }
 
-    loadInitialState() {
-        if (this.config.initialState) {
-            this.knownGifts = new Map(Object.entries(this.config.initialState));
-            console.log(`📦 Загружено ${this.knownGifts.size} подарков из переменных окружения`);
+    async loadState() {
+        try {
+            await fs.access(this.stateFilePath);
+            const data = await fs.readFile(this.stateFilePath, 'utf-8');
+            const gifts = JSON.parse(data);
+            this.knownGifts = new Map(Object.entries(gifts));
+            console.log(`📦 Загружено ${this.knownGifts.size} подарков из состояния`);
             this.isFirstCheck = false;
-        } else {
+        } catch {
             console.log('📝 Начинаем с пустого состояния (первый запуск)');
             this.knownGifts = new Map();
             this.isFirstCheck = true;
         }
     }
 
-    // В Railway файлы не сохраняются, поэтому просто логируем состояние
-    logState() {
-        const giftsObject = Object.fromEntries(this.knownGifts);
-        console.log('\n💾 ТЕКУЩЕЕ СОСТОЯНИЕ:');
-        console.log(JSON.stringify(giftsObject, null, 2));
-        console.log('\n📌 Для сохранения состояния между деплоями добавьте в Railway:');
-        console.log('   Variable: GIFTS_STATE');
-        console.log('   Value: ' + JSON.stringify(giftsObject));
-        console.log('');
+    async saveState() {
+        try {
+            const giftsObject = Object.fromEntries(this.knownGifts);
+            await fs.writeFile(this.stateFilePath, JSON.stringify(giftsObject, null, 2), 'utf-8');
+            console.log(`💾 Состояние сохранено (${this.knownGifts.size} подарков)`);
+        } catch (error) {
+            console.error('❌ Ошибка сохранения:', error.message);
+        }
     }
 
     async fetchGifts() {
@@ -68,9 +113,16 @@ class GiftMonitor {
 
     async sendNotification(message) {
         try {
-            await this.bot.sendMessage(this.config.notificationChatId, message, {
-                parse_mode: 'HTML'
-            });
+            if (this.client) {
+                await this.client.sendMessage(this.config.notificationChatId, {
+                    message,
+                    parseMode: 'html'
+                });
+            } else if (this.bot) {
+                await this.bot.sendMessage(this.config.notificationChatId, message, {
+                    parse_mode: 'HTML'
+                });
+            }
             console.log('📨 Уведомление отправлено');
         } catch (error) {
             console.error('❌ Ошибка отправки:', error.message);
@@ -104,20 +156,16 @@ class GiftMonitor {
 
             if (this.isFirstCheck) {
                 console.log(`\n📦 Первая загрузка: ${data.gifts.length} подарков`);
-                console.log('─'.repeat(60));
                 
                 for (const gift of data.gifts) {
                     const giftData = this.giftToObject(gift);
-                    const giftId = giftData.id.toString();
-                    currentGifts.set(giftId, giftData);
-                    console.log(`   🎁 ID: ${giftId.substring(0, 20).padEnd(20)} | ${String(giftData.stars).padStart(6)} ⭐`);
+                    currentGifts.set(giftData.id.toString(), giftData);
                 }
                 
-                console.log('─'.repeat(60));
                 this.knownGifts = currentGifts;
+                await this.saveState();
                 this.isFirstCheck = false;
-                this.logState(); // Показываем состояние для сохранения
-                console.log('✅ Начальное состояние загружено. Теперь отслеживаем изменения!\n');
+                console.log('✅ Начальное состояние сохранено\n');
                 return;
             }
 
@@ -128,7 +176,7 @@ class GiftMonitor {
                 currentGifts.set(giftId, giftData);
 
                 if (!this.knownGifts.has(giftId)) {
-                    console.log(`\n🎁 НОВЫЙ ПОДАРОК! ID: ${giftId}`);
+                    console.log(`🎁 НОВЫЙ ПОДАРОК! ID: ${giftId}`);
                     await this.notifyNewGift(giftData);
                 } else {
                     await this.checkGiftChanges(giftId, giftData);
@@ -138,21 +186,22 @@ class GiftMonitor {
             // Проверка удалённых
             for (const [giftId, oldGift] of this.knownGifts.entries()) {
                 if (!currentGifts.has(giftId)) {
-                    console.log(`\n🗑️ УДАЛЁН: ${giftId}`);
+                    console.log(`🗑️ УДАЛЁН: ${giftId}`);
                     await this.notifyDeletedGift(oldGift);
                 }
             }
 
             this.knownGifts = currentGifts;
+            await this.saveState();
 
-            const now = new Date().toLocaleTimeString('ru-RU');
-            console.log(`✅ Проверка OK (${currentGifts.size} подарков) | ${now}`);
+            console.log(`✅ Проверка OK (${currentGifts.size} подарков)`);
 
         } catch (error) {
             console.error('❌ Ошибка проверки:', error.message);
         }
     }
 
+    // ФОРМАТ КАК НА СКРИНШОТЕ 1
     async notifyNewGift(gift) {
         let message = '<b>Gift Alerts</b>\n';
         message += '🎁 A new gift has been added.\n\n';
@@ -184,7 +233,7 @@ class GiftMonitor {
     async checkGiftChanges(giftId, newGift) {
         const oldGift = this.knownGifts.get(giftId);
         
-        // Проверка появления апгрейда
+        // Проверка появления апгрейда (ФОРМАТ КАК НА СКРИНШОТЕ 2)
         if (!oldGift.upgradeStars && newGift.upgradeStars > 0) {
             console.log(`⬆️ НОВЫЙ АПГРЕЙД! ID: ${giftId}`);
             await this.notifyUpgrade(newGift);
@@ -222,6 +271,7 @@ class GiftMonitor {
         }
     }
 
+    // ФОРМАТ КАК НА СКРИНШОТЕ 2
     async notifyUpgrade(gift) {
         let message = '<b>Gift Alerts</b>\n';
         message += 'New NFT upgrades are available!\n\n';
@@ -268,12 +318,12 @@ class GiftMonitor {
     async start() {
         try {
             console.log('═══════════════════════════════════════');
-            console.log('🎁  Telegram Gift Monitor v6.4');
-            console.log('    Railway Edition (Stateless)');
+            console.log('🎁  Telegram Gift Monitor v6.3');
+            console.log('    Powered by changes.tg API');
             console.log('═══════════════════════════════════════\n');
 
             await this.initialize();
-            this.loadInitialState();
+            await this.loadState();
 
             // Уведомление о запуске
             await this.sendNotification(
@@ -294,6 +344,10 @@ class GiftMonitor {
 
         } catch (error) {
             console.error('❌ Критическая ошибка:', error);
+        } finally {
+            if (this.client) {
+                await this.client.disconnect();
+            }
         }
     }
 
@@ -305,13 +359,24 @@ class GiftMonitor {
 
 // Проверка настроек
 function validateConfig() {
-    if (!CONFIG.botToken) {
-        console.error('❌ Укажите BOT_TOKEN!');
-        process.exit(1);
+    if (CONFIG.useTelegramClient) {
+        if (!TELEGRAM_CLIENT_CONFIG.apiId || TELEGRAM_CLIENT_CONFIG.apiId === 0) {
+            console.error('❌ Укажите API_ID в TELEGRAM_CLIENT_CONFIG!');
+            process.exit(1);
+        }
+        if (!TELEGRAM_CLIENT_CONFIG.apiHash) {
+            console.error('❌ Укажите API_HASH в TELEGRAM_CLIENT_CONFIG!');
+            process.exit(1);
+        }
+    } else {
+        if (!CONFIG.botToken || CONFIG.botToken === '') {
+            console.error('❌ Укажите токен бота!');
+            process.exit(1);
+        }
     }
 
-    if (!CONFIG.notificationChatId) {
-        console.error('❌ Укажите CHAT_ID!');
+    if (!CONFIG.notificationChatId || CONFIG.notificationChatId === '') {
+        console.error('❌ Укажите ID чата для уведомлений!');
         process.exit(1);
     }
 }
