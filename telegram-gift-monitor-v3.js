@@ -8,16 +8,20 @@ import fetch from 'node-fetch';
 import fs from 'fs/promises';
 
 // ====== НАСТРОЙКИ ======
+// НОВЫЙ, ПРАВИЛЬНЫЙ КОД
 const CONFIG = {
-    botToken: '8591649030:AAFVVtyIlWTeIdGuoAcxWi-KXIz5gSl2OnM', // Токен бота от @BotFather (или оставьте пустым для TelegramClient)
-    notificationChatId: '-1003863003390', // ID чата/группы для уведомлений
-    checkInterval: 5000, // Интервал проверки в миллисекундах (5 секунд)
-    apiUrl: 'https://api.changes.tg/gifts',
-    cdnUrl: 'https://cdn.changes.tg/gifts/',
-    stateFile: 'gifts-state.json',
-    useTelegramClient: false // true = использовать TelegramClient, false = использовать Bot API
+    botToken: process.env.botToken,
+    notificationChatId: process.env.notificationChatId,
+    useTelegramClient: false,
+    checkInterval: 5000,
+    giftsApiUrl: 'https://changes.gift.org/api/gifts/public',
+    stateFileName: 'gifts-state.json',
+    notifyAboutNew: true,
+    notifyAboutChanges: true,
+    notifyAboutRemoved: true,
+    initialNotification: true
 };
-
+м
 // Если используете TelegramClient вместо бота
 const TELEGRAM_CLIENT_CONFIG = {
     apiId: 0, // Ваш API ID
