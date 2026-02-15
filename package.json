@@ -1,17 +1,16 @@
 {
   "name": "telegram-gift-monitor",
-  "version": "6.0.0",
-  "description": "Telegram Gift Monitor using changes.tg API",
+  "version": "7.0.0",
+  "description": "Telegram Gift Monitor with PostgreSQL support",
   "type": "module",
   "main": "telegram-gift-monitor-v3.js",
   "scripts": {
-  "start": "node telegram-gift-monitor-v3.js"
-},
+    "start": "node telegram-gift-monitor-v3.js"
+  },
   "dependencies": {
-    "telegram": "^2.24.2",
-    "input": "^1.0.1",
     "node-telegram-bot-api": "^0.66.0",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "pg": "^8.11.3"
   },
   "engines": {
     "node": ">=18.0.0"
