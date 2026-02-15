@@ -8,7 +8,6 @@ import fetch from 'node-fetch';
 import fs from 'fs/promises';
 
 // ====== НАСТРОЙКИ ======
-// НОВЫЙ, ПРАВИЛЬНЫЙ КОД
 const CONFIG = {
     botToken: '8591649030:AAFVVtyIlWTeIdGuoAcxWi-KXIz5gSl2OnM', // Токен бота от @BotFather (или оставьте пустым для TelegramClient)
     notificationChatId: '-1003863003390', // ID чата/группы для уведомлений
@@ -18,7 +17,7 @@ const CONFIG = {
     stateFile: 'gifts-state.json',
     useTelegramClient: false // true = использовать TelegramClient, false = использовать Bot API
 };
-м
+
 // Если используете TelegramClient вместо бота
 const TELEGRAM_CLIENT_CONFIG = {
     apiId: 0, // Ваш API ID
@@ -120,6 +119,8 @@ class GiftMonitor {
                 throw new Error(`HTTP ${response.status}`);
             }
             const data = await response.json();
+            console.log('Ответ от сервера:', JSON.stringify(data, null, 2));
+            const freshGiftsList = data.gifts || [];
             return data;
         } catch (error) {
             console.error('❌ Ошибка получения данных:', error.message);
